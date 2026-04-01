@@ -1,0 +1,25 @@
+/* globals.css */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0a0a0f;
+  --surface: #111118;
+  --surface2: #18181f;
+  --border: #2a2a35;
+  --border2: #3a3a48;
+  --accent: #7c6bff;
+  --accent2: #a78bfa;
+  --accent-dim: rgba(124, 107, 255, 0.12);
+  --accent-glow: rgba(124, 107, 255, 0.3);
+  --text: #e8e8f0;
+  --text2: #9898b0;
+  --text3: #5a5a72;
+  --green: #34d399;
+  --red: #f87171;
+  --yellow: #fbbf24;
+  --font-display: 'Syne', sans-serif;
+  --font-mono: 'DM Mono', monospace;
+  --font-body: 'Inter', sans-serif;
+}
+
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font-body); }

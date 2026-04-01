@@ -1,0 +1,33 @@
+# ─────────────────────────────────────────────────────
+# Render.com Blueprint — One-click deploy
+# https://render.com/docs/blueprint-spec
+# ─────────────────────────────────────────────────────
+
+services:
+  - type: web
+    name: ask-my-docs
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      # ── Groq LLM ──
+      - key: GROQ_API_KEY
+        sync: false  # You'll enter this in Render dashboard
+      - key: LLM_MODEL
+        value: llama-3.3-70b-versatile
+
+      # ── HuggingFace Embeddings (local, no API key needed) ──
+      - key: EMBEDDING_PROVIDER
+        value: huggingface
+      - key: EMBEDDING_MODEL
+        value: Xenova/all-MiniLM-L6-v2
+
+      # ── Vector DB (local fallback — no separate Chroma server needed) ──
+      - key: VECTOR_DB_PROVIDER
+        value: chroma
+      - key: VECTOR_DB_PATH
+        value: vector_store
+
+      # ── Node ──
+      - key: NODE_ENV
+        value: production

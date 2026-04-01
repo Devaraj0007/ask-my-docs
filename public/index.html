@@ -1,0 +1,1315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="AI-powered document Q&A with hybrid retrieval, reranking, and citations" />
+  <title>Ask My Docs — Production RAG System</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Syne:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ──── Reset & Tokens ──────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #06060b;
+      --bg2:         #0c0c14;
+      --surface:     #10101a;
+      --surface2:    #161622;
+      --surface3:    #1c1c2a;
+      --border:      #222236;
+      --border2:     #2e2e44;
+      --border3:     #3a3a54;
+      --accent:      #7c6bff;
+      --accent2:     #a78bfa;
+      --accent3:     #c4b5fd;
+      --accent-dim:  rgba(124, 107, 255, 0.10);
+      --accent-glow: rgba(124, 107, 255, 0.25);
+      --accent-glow2:rgba(124, 107, 255, 0.08);
+      --text:        #e8e8f4;
+      --text2:       #9898b0;
+      --text3:       #5a5a72;
+      --green:       #34d399;
+      --green-dim:   rgba(52, 211, 153, 0.10);
+      --red:         #f87171;
+      --red-dim:     rgba(248, 113, 113, 0.10);
+      --yellow:      #fbbf24;
+      --font-display: 'Syne', sans-serif;
+      --font-mono:    'DM Mono', monospace;
+      --font-body:    'Inter', sans-serif;
+      --radius-sm:   8px;
+      --radius-md:   12px;
+      --radius-lg:   16px;
+      --radius-xl:   20px;
+      --shadow-sm:   0 2px 8px rgba(0,0,0,0.3);
+      --shadow-md:   0 4px 20px rgba(0,0,0,0.4);
+      --shadow-glow: 0 0 40px var(--accent-glow);
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-body);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* ──── Scrollbar ───────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--border3); }
+
+    /* ──── Animations ──────────────────────────────────────────── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    @keyframes slideDown {
+      from { opacity: 0; max-height: 0; }
+      to   { opacity: 1; max-height: 600px; }
+    }
+    @keyframes pulse {
+      0%, 80%, 100% { transform: scale(0.65); opacity: 0.35; }
+      40%           { transform: scale(1.1); opacity: 1; }
+    }
+    @keyframes shimmer {
+      0%   { background-position: -200% center; }
+      100% { background-position: 200% center; }
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    @keyframes breathe {
+      0%, 100% { box-shadow: 0 0 6px var(--green); }
+      50%      { box-shadow: 0 0 12px var(--green), 0 0 24px rgba(52,211,153,0.15); }
+    }
+    @keyframes gradientShift {
+      0%   { background-position: 0% 50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    /* ──── Layout ──────────────────────────────────────────────── */
+    .app {
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ──── Sidebar ─────────────────────────────────────────────── */
+    .sidebar {
+      width: 280px;
+      flex-shrink: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      z-index: 10;
+    }
+
+    .sidebar::after {
+      content: '';
+      position: absolute;
+      top: 0; right: -1px;
+      width: 1px; height: 100%;
+      background: linear-gradient(180deg, var(--accent-dim), transparent 30%, transparent 70%, var(--accent-dim));
+      pointer-events: none;
+    }
+
+    .sidebar-header {
+      padding: 22px 20px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sidebar-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .sidebar-logo {
+      width: 36px; height: 36px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent), #a78bfa, #8b5cf6);
+      background-size: 200% 200%;
+      animation: gradientShift 4s ease infinite;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+      box-shadow: var(--shadow-glow);
+    }
+
+    .sidebar-title {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--text);
+      line-height: 1.1;
+    }
+
+    .sidebar-subtitle {
+      font-size: 10px;
+      color: var(--text3);
+      font-family: var(--font-mono);
+      margin-top: 3px;
+      letter-spacing: 0.05em;
+    }
+
+    /* Upload Button */
+    .upload-toggle-btn {
+      width: 100%;
+      padding: 11px 14px;
+      border-radius: var(--radius-md);
+      background: transparent;
+      border: 1px solid var(--border2);
+      color: var(--text2);
+      font-size: 12px;
+      font-family: var(--font-body);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: all 0.2s ease;
+    }
+    .upload-toggle-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent2);
+      background: var(--accent-dim);
+    }
+    .upload-toggle-btn.active {
+      border-color: var(--accent);
+      color: var(--accent2);
+      background: var(--accent-dim);
+    }
+    .upload-toggle-btn .icon {
+      font-size: 15px;
+      display: flex;
+    }
+
+    .sidebar-section {
+      padding: 16px 20px;
+    }
+
+    /* Upload Panel */
+    .upload-panel {
+      padding: 0 20px 16px;
+      animation: fadeIn 0.2s ease;
+    }
+
+    .dropzone {
+      border: 1.5px dashed var(--border2);
+      border-radius: var(--radius-md);
+      padding: 24px 16px;
+      text-align: center;
+      cursor: pointer;
+      background: var(--bg2);
+      transition: all 0.2s ease;
+      user-select: none;
+    }
+    .dropzone:hover,
+    .dropzone.dragging {
+      border-color: var(--accent);
+      background: var(--accent-dim);
+    }
+    .dropzone.uploading {
+      cursor: wait;
+      opacity: 0.7;
+    }
+
+    .dropzone-icon {
+      font-size: 26px;
+      margin-bottom: 8px;
+    }
+    .dropzone-text {
+      font-size: 12px;
+      color: var(--text2);
+      line-height: 1.5;
+    }
+    .dropzone-hint {
+      font-size: 10px;
+      color: var(--text3);
+      font-family: var(--font-mono);
+      margin-top: 6px;
+    }
+
+    .progress-bar-container {
+      margin-top: 10px;
+      height: 3px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      border-radius: 2px;
+      transition: width 0.3s ease;
+    }
+
+    .upload-status {
+      margin-top: 10px;
+      padding: 9px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 11px;
+      line-height: 1.5;
+      animation: fadeIn 0.2s ease;
+    }
+    .upload-status.success {
+      background: var(--green-dim);
+      border: 1px solid rgba(52,211,153,0.25);
+      color: var(--green);
+    }
+    .upload-status.error {
+      background: var(--red-dim);
+      border: 1px solid rgba(248,113,113,0.25);
+      color: var(--red);
+    }
+
+    /* Indexed Files */
+    .indexed-section {
+      padding: 0 20px;
+      flex: 1;
+      overflow-y: auto;
+    }
+    .section-label {
+      font-size: 10px;
+      color: var(--text3);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      font-family: var(--font-mono);
+      margin-bottom: 10px;
+    }
+
+    .file-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      margin-bottom: 6px;
+      animation: fadeUp 0.25s ease;
+      transition: border-color 0.15s;
+    }
+    .file-card:hover {
+      border-color: var(--border2);
+    }
+    .file-card .file-icon { font-size: 16px; flex-shrink: 0; }
+    .file-card .file-info { overflow: hidden; flex: 1; }
+    .file-card .file-name {
+      font-size: 11px;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .file-card .file-chunks {
+      font-size: 10px;
+      color: var(--text3);
+      font-family: var(--font-mono);
+      margin-top: 1px;
+    }
+    .file-card .file-check {
+      color: var(--green);
+      font-size: 11px;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+
+    /* Pipeline Info */
+    .pipeline-section {
+      margin-top: auto;
+      padding: 18px 20px;
+      border-top: 1px solid var(--border);
+    }
+
+    .pipeline-step {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 7px;
+    }
+    .pipeline-step:last-child { margin-bottom: 0; }
+
+    .pipeline-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+      opacity: 0.7;
+    }
+    .pipeline-label {
+      font-size: 11px;
+      color: var(--text2);
+    }
+
+    /* ──── Main Area ───────────────────────────────────────────── */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    /* Top Bar */
+    .topbar {
+      padding: 14px 28px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+
+    .topbar h1 {
+      font-family: var(--font-display);
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .topbar-sub {
+      font-size: 11px;
+      color: var(--text3);
+      font-family: var(--font-mono);
+      margin-top: 2px;
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: breathe 2s ease-in-out infinite;
+    }
+
+    .status-text {
+      font-size: 11px;
+      color: var(--text3);
+      font-family: var(--font-mono);
+    }
+
+    /* ──── Chat Messages ───────────────────────────────────────── */
+    .messages-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Empty State */
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px 20px;
+      animation: fadeIn 0.5s ease;
+    }
+
+    .empty-logo {
+      width: 72px; height: 72px;
+      border-radius: 20px;
+      background: linear-gradient(135deg, var(--accent), #a78bfa, #8b5cf6);
+      background-size: 200% 200%;
+      animation: gradientShift 3s ease infinite;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      margin-bottom: 28px;
+      box-shadow: 0 12px 48px var(--accent-glow);
+    }
+
+    .empty-title {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 24px;
+      color: var(--text);
+      margin-bottom: 10px;
+    }
+
+    .empty-desc {
+      font-size: 13px;
+      color: var(--text2);
+      max-width: 400px;
+      line-height: 1.7;
+      margin-bottom: 36px;
+    }
+
+    .suggestions-label {
+      font-size: 10px;
+      color: var(--text3);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      font-family: var(--font-mono);
+      margin-bottom: 12px;
+    }
+
+    .suggestions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 100%;
+      max-width: 440px;
+    }
+
+    .suggestion-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px 16px;
+      text-align: left;
+      color: var(--text2);
+      font-size: 13px;
+      font-family: var(--font-body);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      line-height: 1.5;
+    }
+    .suggestion-btn:hover {
+      border-color: var(--accent);
+      color: var(--text);
+      background: var(--accent-glow2);
+      transform: translateX(4px);
+    }
+
+    /* Message */
+    .message {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 22px;
+      animation: fadeUp 0.3s ease;
+    }
+    .message.user   { align-items: flex-end; }
+    .message.assistant { align-items: flex-start; }
+
+    .message-label {
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      font-family: var(--font-mono);
+      margin-bottom: 7px;
+    }
+    .message.user .message-label {
+      color: var(--accent2);
+      padding-right: 3px;
+    }
+    .message.assistant .message-label {
+      color: var(--text3);
+      padding-left: 3px;
+    }
+
+    .message-bubble {
+      max-width: 78%;
+      font-size: 14px;
+      line-height: 1.7;
+      letter-spacing: 0.01em;
+      font-family: var(--font-body);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .message.user .message-bubble {
+      padding: 13px 18px;
+      background: linear-gradient(135deg, var(--accent), #5b49e0);
+      border-radius: 18px 18px 4px 18px;
+      color: #fff;
+      box-shadow: 0 4px 24px rgba(124,107,255,0.30);
+    }
+
+    .message.assistant .message-bubble {
+      padding: 18px 22px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px 18px 18px 18px;
+      color: var(--text);
+      box-shadow: var(--shadow-sm);
+    }
+
+    /* Citation badge inline */
+    .citation {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 3px;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 5px;
+      margin: 0 1px;
+      font-family: var(--font-mono);
+      vertical-align: super;
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    /* Message metadata */
+    .message-meta {
+      font-size: 10px;
+      color: var(--text3);
+      margin-top: 7px;
+      font-family: var(--font-mono);
+      padding-left: 3px;
+    }
+
+    /* Sources Panel */
+    .sources-toggle {
+      margin-top: 10px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 6px 14px;
+      color: var(--text2);
+      font-size: 11px;
+      font-family: var(--font-mono);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      transition: all 0.15s ease;
+    }
+    .sources-toggle:hover {
+      border-color: var(--accent);
+      color: var(--accent2);
+    }
+    .sources-toggle .arrow { opacity: 0.6; font-size: 9px; }
+
+    .sources-list {
+      margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-width: 78%;
+      animation: slideDown 0.3s ease;
+      overflow: hidden;
+    }
+
+    .source-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      padding: 12px 16px;
+      transition: border-color 0.15s;
+    }
+    .source-card:hover {
+      border-color: var(--border2);
+      border-left-color: var(--accent2);
+    }
+
+    .source-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .source-badge {
+      background: var(--accent);
+      color: #fff;
+      border-radius: 4px;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 2px 7px;
+      font-family: var(--font-mono);
+    }
+
+    .source-name {
+      font-size: 11px;
+      color: var(--accent2);
+      font-family: var(--font-mono);
+    }
+
+    .source-score {
+      font-size: 10px;
+      color: var(--text3);
+      margin-left: auto;
+      font-family: var(--font-mono);
+    }
+
+    .source-excerpt {
+      font-size: 12px;
+      color: var(--text2);
+      line-height: 1.55;
+      font-family: var(--font-body);
+    }
+
+    /* Typing Indicator */
+    .typing-indicator {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      margin-bottom: 22px;
+      animation: fadeUp 0.25s ease;
+    }
+
+    .typing-dots {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px 16px 16px 16px;
+      padding: 16px 20px;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .typing-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+    .typing-dot:nth-child(1) { animation: pulse 1.2s ease-in-out 0s infinite; }
+    .typing-dot:nth-child(2) { animation: pulse 1.2s ease-in-out 0.2s infinite; }
+    .typing-dot:nth-child(3) { animation: pulse 1.2s ease-in-out 0.4s infinite; }
+
+    /* ──── Input Area ──────────────────────────────────────────── */
+    .input-area {
+      padding: 18px 28px 22px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+
+    .input-wrapper {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 16px;
+      padding: 10px 14px 10px 18px;
+      transition: all 0.2s ease;
+    }
+    .input-wrapper:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-dim);
+    }
+
+    .input-wrapper textarea {
+      flex: 1;
+      resize: none;
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-size: 14px;
+      font-family: var(--font-body);
+      line-height: 1.5;
+      max-height: 120px;
+      overflow-y: auto;
+      outline: none;
+    }
+    .input-wrapper textarea::placeholder {
+      color: var(--text3);
+    }
+
+    .send-btn {
+      width: 38px; height: 38px;
+      border-radius: 10px;
+      flex-shrink: 0;
+      background: var(--border);
+      border: none;
+      cursor: default;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 17px;
+      color: #fff;
+      transition: all 0.2s ease;
+    }
+    .send-btn.active {
+      background: var(--accent);
+      cursor: pointer;
+      box-shadow: 0 2px 12px var(--accent-glow);
+    }
+    .send-btn.active:hover {
+      background: #6b5af0;
+      transform: scale(1.05);
+    }
+    .send-btn.active:active {
+      transform: scale(0.93);
+    }
+
+    .input-hint {
+      font-size: 10px;
+      color: var(--text3);
+      text-align: center;
+      margin-top: 10px;
+      font-family: var(--font-mono);
+    }
+
+    /* ──── Responsive ──────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      .sidebar {
+        position: fixed;
+        left: -280px;
+        top: 0; bottom: 0;
+        z-index: 1000;
+        transition: left 0.3s ease;
+      }
+      .sidebar.open { left: 0; }
+      .sidebar-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.6);
+        z-index: 999;
+      }
+      .sidebar-overlay.visible { display: block; }
+      .mobile-toggle {
+        display: flex !important;
+      }
+    }
+
+    .mobile-toggle {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 36px; height: 36px;
+      border-radius: var(--radius-sm);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text2);
+      cursor: pointer;
+      font-size: 16px;
+      transition: all 0.15s;
+    }
+    .mobile-toggle:hover {
+      border-color: var(--accent);
+      color: var(--accent2);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app" id="app">
+    <!-- Sidebar Overlay (mobile) -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+    <!-- ─── Sidebar ───────────────────────────────────────── -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-brand">
+          <div class="sidebar-logo">◈</div>
+          <div>
+            <div class="sidebar-title">Ask My Docs</div>
+            <div class="sidebar-subtitle">Production RAG v1.0</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <button class="upload-toggle-btn" id="uploadToggleBtn" onclick="toggleUploader()">
+          <span class="icon">⬆</span>
+          Upload Documents
+        </button>
+      </div>
+
+      <!-- Upload Panel (hidden by default) -->
+      <div class="upload-panel" id="uploadPanel" style="display:none;">
+        <div class="dropzone" id="dropzone"
+             onclick="document.getElementById('fileInput').click()"
+             ondragover="handleDragOver(event)"
+             ondragleave="handleDragLeave(event)"
+             ondrop="handleDrop(event)">
+          <div class="dropzone-icon" id="dropzoneIcon">📂</div>
+          <p class="dropzone-text" id="dropzoneText">Click or drag a file here</p>
+          <p class="dropzone-hint">PDF · TXT · DOCX · max 10MB</p>
+        </div>
+        <input type="file" id="fileInput" accept=".pdf,.txt,.docx" style="display:none" onchange="handleFileSelect(event)" />
+
+        <div class="progress-bar-container" id="progressContainer" style="display:none;">
+          <div class="progress-bar-fill" id="progressFill"></div>
+        </div>
+        <div id="uploadStatus"></div>
+      </div>
+
+      <!-- Indexed Files -->
+      <div class="indexed-section" id="indexedSection" style="display:none;">
+        <p class="section-label" id="indexedLabel">Indexed (0)</p>
+        <div id="indexedFiles"></div>
+      </div>
+
+      <!-- Pipeline Info -->
+      <div class="pipeline-section">
+        <p class="section-label">Pipeline</p>
+        <div class="pipeline-step"><div class="pipeline-dot"></div><span class="pipeline-label">BM25 + Vector Search</span></div>
+        <div class="pipeline-step"><div class="pipeline-dot"></div><span class="pipeline-label">Cross-Encoder Rerank</span></div>
+        <div class="pipeline-step"><div class="pipeline-dot"></div><span class="pipeline-label">Citation Enforcement</span></div>
+        <div class="pipeline-step"><div class="pipeline-dot"></div><span class="pipeline-label">RAGAS Evaluation</span></div>
+      </div>
+    </aside>
+
+    <!-- ─── Main ──────────────────────────────────────────── -->
+    <main class="main">
+      <!-- Top Bar -->
+      <div class="topbar">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <button class="mobile-toggle" onclick="toggleSidebar()">☰</button>
+          <div>
+            <h1>Document Intelligence</h1>
+            <p class="topbar-sub">Hybrid retrieval · Reranked · Cited</p>
+          </div>
+        </div>
+        <div class="status-indicator">
+          <div class="status-dot"></div>
+          <span class="status-text" id="statusText">0 docs indexed</span>
+        </div>
+      </div>
+
+      <!-- Messages -->
+      <div class="messages-container" id="messagesContainer">
+        <!-- Empty state rendered by JS -->
+      </div>
+
+      <!-- Input Area -->
+      <div class="input-area">
+        <div class="input-wrapper" id="inputWrapper">
+          <textarea
+            id="chatInput"
+            rows="1"
+            placeholder="Ask a question about your documents…"
+            oninput="autoResize(this); updateSendBtn()"
+            onkeydown="handleKeyDown(event)"
+          ></textarea>
+          <button class="send-btn" id="sendBtn" onclick="sendMessage()">↑</button>
+        </div>
+        <p class="input-hint">Press Enter to send · Shift+Enter for newline</p>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // ══════════════════════════════════════════════════════════════
+    //  STATE
+    // ══════════════════════════════════════════════════════════════
+    const state = {
+      messages: [],
+      loading: false,
+      uploading: false,
+      uploadedFiles: [],
+      uploaderOpen: false,
+      sidebarOpen: false,
+    };
+
+    // ══════════════════════════════════════════════════════════════
+    //  DOM REFS
+    // ══════════════════════════════════════════════════════════════
+    const $ = (id) => document.getElementById(id);
+    const messagesContainer = $('messagesContainer');
+    const chatInput = $('chatInput');
+    const sendBtn = $('sendBtn');
+    const statusText = $('statusText');
+
+    // ══════════════════════════════════════════════════════════════
+    //  RENDER
+    // ══════════════════════════════════════════════════════════════
+    function renderMessages() {
+      if (state.messages.length === 0 && !state.loading) {
+        renderEmptyState();
+        return;
+      }
+
+      let html = '';
+      for (const msg of state.messages) {
+        html += renderMessageHTML(msg);
+      }
+      if (state.loading) {
+        html += renderTypingHTML();
+      }
+      messagesContainer.innerHTML = html;
+
+      // Scroll to bottom
+      requestAnimationFrame(() => {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      });
+    }
+
+    function renderEmptyState() {
+      const suggestions = [
+        'What is the main topic of the uploaded document?',
+        'Summarize the key points from the documents.',
+        'What are the important dates or deadlines mentioned?',
+        'Explain the process or steps described in the doc.',
+      ];
+
+      messagesContainer.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-logo">◈</div>
+          <h2 class="empty-title">Ask Your Documents</h2>
+          <p class="empty-desc">
+            Upload a PDF, TXT, or DOCX file, then ask questions.
+            Every answer is grounded in your documents with precise citations.
+          </p>
+          <p class="suggestions-label">Try asking</p>
+          <div class="suggestions">
+            ${suggestions.map(s => `
+              <button class="suggestion-btn" onclick="sendSuggestion(this)" data-question="${escapeAttr(s)}">${escapeHTML(s)}</button>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderMessageHTML(msg) {
+      const isUser = msg.role === 'user';
+      const roleClass = isUser ? 'user' : 'assistant';
+      const label = isUser ? 'You' : 'Ask My Docs';
+      const bubbleContent = isUser ? escapeHTML(msg.content) : renderCitations(msg.content);
+
+      let sourcesHTML = '';
+      if (!isUser && msg.sources && msg.sources.length > 0) {
+        const sourcesId = 'sources-' + msg.id;
+        sourcesHTML = `
+          <button class="sources-toggle" onclick="toggleSources('${sourcesId}')">
+            <span class="arrow" id="arrow-${sourcesId}">▶</span>
+            ${msg.sources.length} source${msg.sources.length !== 1 ? 's' : ''}
+          </button>
+          <div class="sources-list" id="${sourcesId}" style="display:none;">
+            ${msg.sources.map(src => `
+              <div class="source-card">
+                <div class="source-header">
+                  <span class="source-badge">[${src.index}]</span>
+                  <span class="source-name">${escapeHTML(src.source || '')}</span>
+                  ${src.rerankScore != null ? `<span class="source-score">score: ${src.rerankScore.toFixed(3)}</span>` : ''}
+                </div>
+                <p class="source-excerpt">${escapeHTML(src.excerpt || '')}</p>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      let metaHTML = '';
+      if (!isUser && msg.metadata) {
+        metaHTML = `<div class="message-meta">${msg.metadata.rerankedCount || 0} docs · ${msg.metadata.responseTimeMs || msg.metadata.totalResponseTimeMs || 0}ms</div>`;
+      }
+
+      return `
+        <div class="message ${roleClass}">
+          <div class="message-label">${label}</div>
+          <div class="message-bubble">${bubbleContent}</div>
+          ${sourcesHTML}
+          ${metaHTML}
+        </div>
+      `;
+    }
+
+    function renderCitations(text) {
+      if (!text) return '';
+      return escapeHTML(text).replace(/\[(\d+)\]/g, '<span class="citation">$1</span>');
+    }
+
+    function renderTypingHTML() {
+      return `
+        <div class="typing-indicator">
+          <div class="message-label" style="color:var(--text3); padding-left:3px;">Ask My Docs</div>
+          <div class="typing-dots">
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  CHAT
+    // ══════════════════════════════════════════════════════════════
+    async function sendMessage(questionOverride) {
+      const question = (questionOverride || chatInput.value).trim();
+      if (!question || state.loading) return;
+
+      chatInput.value = '';
+      autoResize(chatInput);
+      updateSendBtn();
+
+      state.messages.push({ role: 'user', content: question, id: Date.now() });
+      state.loading = true;
+      renderMessages();
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Something went wrong');
+
+        state.messages.push({
+          role: 'assistant',
+          content: data.answer,
+          sources: data.sources,
+          metadata: data.metadata,
+          id: Date.now(),
+        });
+      } catch (err) {
+        state.messages.push({
+          role: 'assistant',
+          content: '⚠️ ' + err.message,
+          id: Date.now(),
+        });
+      } finally {
+        state.loading = false;
+        renderMessages();
+        chatInput.focus();
+      }
+    }
+
+    function sendSuggestion(btn) {
+      sendMessage(btn.dataset.question);
+    }
+
+    function handleKeyDown(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    }
+
+    function autoResize(el) {
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+    }
+
+    function updateSendBtn() {
+      const hasText = chatInput.value.trim().length > 0;
+      if (hasText && !state.loading) {
+        sendBtn.classList.add('active');
+      } else {
+        sendBtn.classList.remove('active');
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  SOURCES TOGGLE
+    // ══════════════════════════════════════════════════════════════
+    function toggleSources(id) {
+      const el = document.getElementById(id);
+      const arrow = document.getElementById('arrow-' + id);
+      if (el.style.display === 'none') {
+        el.style.display = 'flex';
+        arrow.textContent = '▼';
+      } else {
+        el.style.display = 'none';
+        arrow.textContent = '▶';
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  FILE UPLOAD
+    // ══════════════════════════════════════════════════════════════
+    function toggleUploader() {
+      state.uploaderOpen = !state.uploaderOpen;
+      const panel = $('uploadPanel');
+      const btn = $('uploadToggleBtn');
+      if (state.uploaderOpen) {
+        panel.style.display = 'block';
+        btn.classList.add('active');
+      } else {
+        panel.style.display = 'none';
+        btn.classList.remove('active');
+      }
+    }
+
+    function handleDragOver(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      $('dropzone').classList.add('dragging');
+      $('dropzoneText').textContent = 'Drop to upload';
+    }
+
+    function handleDragLeave(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      $('dropzone').classList.remove('dragging');
+      $('dropzoneText').textContent = 'Click or drag a file here';
+    }
+
+    function handleDrop(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      $('dropzone').classList.remove('dragging');
+      $('dropzoneText').textContent = 'Click or drag a file here';
+      const file = e.dataTransfer.files[0];
+      if (file) uploadFile(file);
+    }
+
+    function handleFileSelect(e) {
+      const file = e.target.files[0];
+      if (file) uploadFile(file);
+      e.target.value = '';
+    }
+
+    async function uploadFile(file) {
+      if (state.uploading) return;
+
+      // Client validation
+      const ext = file.name.split('.').pop().toLowerCase();
+      if (!['pdf', 'txt', 'docx'].includes(ext)) {
+        showUploadStatus('error', `Unsupported file type: .${ext}. Use PDF, TXT, or DOCX.`);
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        showUploadStatus('error', 'File too large. Maximum size: 10MB');
+        return;
+      }
+
+      state.uploading = true;
+      $('dropzone').classList.add('uploading');
+      $('dropzoneIcon').textContent = '⚙️';
+      $('dropzoneText').textContent = 'Processing…';
+      $('uploadStatus').innerHTML = '';
+      showProgress(10);
+
+      const progressInterval = setInterval(() => {
+        const fill = $('progressFill');
+        const current = parseFloat(fill.style.width) || 10;
+        if (current < 85) fill.style.width = (current + 6) + '%';
+      }, 400);
+
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        clearInterval(progressInterval);
+        showProgress(100);
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Upload failed');
+
+        showUploadStatus('success', `✓ "${data.filename}" processed into ${data.chunks} chunks`);
+
+        state.uploadedFiles.push(data);
+        renderIndexedFiles();
+        updateStatusText();
+
+        // Close uploader after success
+        setTimeout(() => {
+          state.uploaderOpen = false;
+          $('uploadPanel').style.display = 'none';
+          $('uploadToggleBtn').classList.remove('active');
+        }, 1500);
+      } catch (err) {
+        clearInterval(progressInterval);
+        showProgress(0);
+        showUploadStatus('error', err.message);
+      } finally {
+        state.uploading = false;
+        $('dropzone').classList.remove('uploading');
+        $('dropzoneIcon').textContent = '📂';
+        $('dropzoneText').textContent = 'Click or drag a file here';
+        setTimeout(() => showProgress(0), 1200);
+      }
+    }
+
+    function showProgress(pct) {
+      const container = $('progressContainer');
+      const fill = $('progressFill');
+      if (pct > 0) {
+        container.style.display = 'block';
+        fill.style.width = pct + '%';
+      } else {
+        container.style.display = 'none';
+        fill.style.width = '0%';
+      }
+    }
+
+    function showUploadStatus(type, message) {
+      $('uploadStatus').innerHTML = `<div class="upload-status ${type}">${escapeHTML(message)}</div>`;
+    }
+
+    function renderIndexedFiles() {
+      if (state.uploadedFiles.length === 0) {
+        $('indexedSection').style.display = 'none';
+        return;
+      }
+      $('indexedSection').style.display = 'block';
+      $('indexedLabel').textContent = `Indexed (${state.uploadedFiles.length})`;
+
+      $('indexedFiles').innerHTML = state.uploadedFiles.map(f => {
+        const icon = f.filename?.endsWith('.pdf') ? '📄' : f.filename?.endsWith('.docx') ? '📝' : '📃';
+        return `
+          <div class="file-card">
+            <span class="file-icon">${icon}</span>
+            <div class="file-info">
+              <div class="file-name">${escapeHTML(f.filename || '')}</div>
+              <div class="file-chunks">${f.chunks} chunks</div>
+            </div>
+            <span class="file-check">✓</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function updateStatusText() {
+      const count = state.uploadedFiles.length;
+      statusText.textContent = `${count} doc${count !== 1 ? 's' : ''} indexed`;
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  SIDEBAR (MOBILE)
+    // ══════════════════════════════════════════════════════════════
+    function toggleSidebar() {
+      state.sidebarOpen = !state.sidebarOpen;
+      const sidebar = $('sidebar');
+      const overlay = $('sidebarOverlay');
+      if (state.sidebarOpen) {
+        sidebar.classList.add('open');
+        overlay.classList.add('visible');
+      } else {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('visible');
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  UTILS
+    // ══════════════════════════════════════════════════════════════
+    function escapeHTML(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    function escapeAttr(str) {
+      return str.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  INIT
+    // ══════════════════════════════════════════════════════════════
+    renderMessages();
+    chatInput.focus();
+  </script>
+</body>
+</html>

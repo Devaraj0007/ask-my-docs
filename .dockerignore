@@ -1,0 +1,12 @@
+.git
+.github
+node_modules
+.next
+.env
+*.log
+coverage
+eval/last_report.json
+data/documents/*
+vector_store/*
+README.md
+tests/
